@@ -1,9 +1,5 @@
-# ESP32 HD44780 driver/library
+# WORK IN PROGRESS
 
-This is a header-only C++ style library (see files in `main/include/`) for driving the popular **HD447870** LCD display from an **ESP32** microcontroller.
-Currently, there exists one Connector - using **PCF8574** 8-bit expander via **I2C**.
-Feel free to suggest or write other Connectors.
+# ESP32 MCP3xxx ADC driver/library
 
-Main source file contains simple tests. You can see the results [here](https://imgur.com/a/MCVgFki).
-
-For C-style library, see [bradkeifer/esp32-HD44780](https://github.com/bradkeifer/esp32-HD44780), on which this library is based.
+This is a header-only C++ style library (see files in `main/include/`) for driving the popular **MCP3xxx** family of analog-digital converters from an **ESP32** microcontroller.
