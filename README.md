@@ -3,14 +3,10 @@
 This is a single-file header-only C++ style library (see files in `main/include/`) for driving the popular **MCP3xxx** family of MicroChip's analog-digital converters from an **ESP32** microcontroller.
 
 Currently supported are:
-
-MCP3002, MCP3004, MCP3008
-
-MCP3202, MCP3204, MCP3208
-
-MCP3304, MCP3308
-
-Perhaps other versions too.
+- MCP3002, MCP3004, MCP3008
+- MCP3202, MCP3204, MCP3208
+- MCP3304, MCP3308
+- other versions?
 
 
 It is based on three other libraries:
