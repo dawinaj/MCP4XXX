@@ -1433,21 +1433,6 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 # CONFIG_WPA_DPP_SUPPORT is not set
 # CONFIG_WPA_11R_SUPPORT is not set
 # end of Supplicant
-
-#
-# LCD Configuration
-#
-CONFIG_HARDWARE_I2C_PORT0=y
-# CONFIG_HARDWARE_I2C_PORT1 is not set
-CONFIG_I2C_CLK_FREQ=100000
-CONFIG_SDA_GPIO=18
-CONFIG_SCL_GPIO=19
-CONFIG_LCD_ADDR=0x3f
-CONFIG_LCD_ROWS=4
-CONFIG_LCD_COLUMNS=20
-CONFIG_LCD_BACKLIGHT_ON=y
-# CONFIG_LCD_BACKLIGHT_OFF is not set
-# end of LCD Configuration
 # end of Component config
 
 # Deprecated options for backward compatibility
