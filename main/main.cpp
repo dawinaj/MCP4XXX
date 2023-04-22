@@ -35,11 +35,9 @@ extern "C" void app_main(void)
 
 	init_spi();
 
-	vTaskDelay(pdMS_TO_TICKS(1000));
-
 	MCP3204 adc(SPI3_HOST, GPIO_NUM_5);
 
 	float voltage = adc.get_float_volt(0);
 
-	ESP_LOGI("mcp320x", "Voltage: %f V", voltage);
+	ESP_LOGI("MCP3XXX", "Voltage: %f V", voltage);
 }
