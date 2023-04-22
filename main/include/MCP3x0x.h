@@ -33,7 +33,7 @@ enum mcp_signed_t : bool
 #define TAG "MCP3xxx"
 
 template <mcp_channels_t C, mcp_bits_t B, mcp_signed_t S = MCP_DATA_UNSIGNED>
-class MCP3xxx
+class MCP3x0x
 {
 	spi_device_handle_t spi_hdl;
 	int32_t ref_mvolt;
@@ -48,7 +48,7 @@ public:
 	static constexpr int32_t raw_max = S ? (1u << (B - 1)) : (1u << B);
 	static constexpr int32_t raw_min = S ? (1u << (B - 1)) - 1 : 0;
 
-	MCP3xxx(spi_host_device_t spihost, gpio_num_t csgpio, int clkhz = 1'000'000, int rmv = 5000, float sc = 1) : ref_mvolt(rmv), scale(sc)
+	MCP3x0x(spi_host_device_t spihost, gpio_num_t csgpio, int clkhz = 1'000'000, int rmv = 5000, float sc = 1) : ref_mvolt(rmv), scale(sc)
 	{
 		esp_err_t ret = ESP_OK;
 
@@ -74,7 +74,7 @@ public:
 	err:
 		ESP_LOGE(TAG, "Failed to construct MCP! Error: %s", esp_err_to_name(ret));
 	}
-	~MCP3xxx()
+	~MCP3x0x()
 	{
 		esp_err_t ret = ESP_OK;
 
@@ -278,46 +278,46 @@ private:
 /// Max clock frequency for 2.7V: 1200000 Hz
 /// Max clock frequency for 5.0V: 3200000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21294E.pdf
-using MCP3002 = MCP3xxx<MCP_CHANNELS_2, MCP_BITS_10>;
+using MCP3002 = MCP3x0x<MCP_CHANNELS_2, MCP_BITS_10>;
 
 /// \brief A typedef for the MCP3004.
 /// Max clock frequency for 2.7V: 1350000 Hz
 /// Max clock frequency for 5.0V: 3600000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21295C.pdf
-using MCP3004 = MCP3xxx<MCP_CHANNELS_4, MCP_BITS_10>;
+using MCP3004 = MCP3x0x<MCP_CHANNELS_4, MCP_BITS_10>;
 
 /// \brief A typedef for the MCP3008.
 /// Max clock frequency for 2.7V: 1350000 Hz
 /// Max clock frequency for 5.0V: 3600000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21295C.pdf
-using MCP3008 = MCP3xxx<MCP_CHANNELS_8, MCP_BITS_10>;
+using MCP3008 = MCP3x0x<MCP_CHANNELS_8, MCP_BITS_10>;
 
 /// \brief A typedef for the MCP3202.
 /// Max clock frequency for 2.7V:  900000 Hz
 /// Max clock frequency for 5.0V: 1800000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21034D.pdf
-using MCP3202 = MCP3xxx<MCP_CHANNELS_2, MCP_BITS_12>;
+using MCP3202 = MCP3x0x<MCP_CHANNELS_2, MCP_BITS_12>;
 
 /// \brief A typedef for the MCP3204.
 /// Max clock frequency for 2.7V: 1000000 Hz
 /// Max clock frequency for 5.0V: 2000000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21298c.pdf
-using MCP3204 = MCP3xxx<MCP_CHANNELS_4, MCP_BITS_12>;
+using MCP3204 = MCP3x0x<MCP_CHANNELS_4, MCP_BITS_12>;
 
 /// \brief A typedef for the MCP3208.
 /// Max clock frequency for 2.7V: 1000000 Hz
 /// Max clock frequency for 5.0V: 2000000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21298c.pdf
-using MCP3208 = MCP3xxx<MCP_CHANNELS_8, MCP_BITS_12>;
+using MCP3208 = MCP3x0x<MCP_CHANNELS_8, MCP_BITS_12>;
 
 /// \brief A typedef for the MCP3302.
 /// Max clock frequency for 2.7V: 1050000 Hz
 /// Max clock frequency for 5.0V: 2100000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21697e.pdf
-using MCP3302 = MCP3xxx<MCP_CHANNELS_4, MCP_BITS_13, MCP_DATA_SIGNED>;
+using MCP3302 = MCP3x0x<MCP_CHANNELS_4, MCP_BITS_13, MCP_DATA_SIGNED>;
 
 /// \brief A typedef for the MCP3304.
 /// Max clock frequency for 2.7V: 1050000 Hz
 /// Max clock frequency for 5.0V: 2100000 Hz
 /// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21697e.pdf
-using MCP3304 = MCP3xxx<MCP_CHANNELS_8, MCP_BITS_13, MCP_DATA_SIGNED>;
+using MCP3304 = MCP3x0x<MCP_CHANNELS_8, MCP_BITS_13, MCP_DATA_SIGNED>;
