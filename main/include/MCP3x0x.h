@@ -1,215 +1,169 @@
+#ifndef MCP3XXX_H
+#define MCP3XXX_H
+
+#include <type_traits>
 
 #include <esp_log.h>
 #include <esp_check.h>
+
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
 
-enum mcp_channels_t : uint8_t
+enum mcp_adc_channels_t : uint8_t
 {
-	MCP_CHANNELS_2 = 2,
-	MCP_CHANNELS_4 = 4,
-	MCP_CHANNELS_8 = 8,
+	MCP_ADC_CHANNELS_2 = 2,
+	MCP_ADC_CHANNELS_4 = 4,
+	MCP_ADC_CHANNELS_8 = 8,
 };
 
-enum mcp_bits_t : uint8_t
+enum mcp_adc_bits_t : uint8_t
 {
-	MCP_BITS_10 = 10,
-	MCP_BITS_12 = 12,
-	MCP_BITS_13 = 13,
+	MCP_ADC_BITS_10 = 10,
+	MCP_ADC_BITS_12 = 12,
+	MCP_ADC_BITS_13 = 13,
 };
 
-enum mcp_read_mode_t : bool
+enum mcp_adc_signed_t : bool
 {
-	MCP_READ_DFRNTL = 0,
-	MCP_READ_SINGLE = 1
+	MCP_ADC_DATA_UNSIGNED = 0,
+	MCP_ADC_DATA_SIGNED = 1
 };
 
-enum mcp_signed_t : bool
+enum mcp_adc_read_mode_t : bool
 {
-	MCP_DATA_UNSIGNED = 0,
-	MCP_DATA_SIGNED = 1
+	MCP_ADC_READ_DFRNTL = 0,
+	MCP_ADC_READ_SINGLE = 1
 };
 
-#define TAG "MCP3xxx"
+//
 
-template <mcp_channels_t C, mcp_bits_t B, mcp_signed_t S = MCP_DATA_UNSIGNED>
-class MCP3x0x
+template <mcp_adc_channels_t C, mcp_adc_bits_t B, mcp_adc_signed_t S = MCP_ADC_DATA_UNSIGNED>
+class MCP3xxx
 {
-	using uout_t = std::conditional_t<(B <= 8), uint8_t, uint16_t>;
-	using sout_t = std::conditional_t<(B <= 8), int8_t, int16_t>;
+	static constexpr const char *const TAG = "MCP3xxx";
+
+	using uout_t = uint16_t;
+	using sout_t = int16_t;
 
 public:
 	using out_t = std::conditional_t<S, sout_t, uout_t>;
+	static constexpr uint8_t bits = B;
+	static constexpr uint8_t channels = C;
+	static constexpr bool is_signed = S;
+
+	static constexpr out_t ref = 1u << (bits - is_signed);
+	static constexpr out_t max = ref - 1;
+	static constexpr out_t min = ref - (1u << bits);
 
 private:
-	spi_device_handle_t spi_hdl;
-	float ref_volt;
+	static constexpr uout_t resp_mask = (1u << bits) - 1;
+	static constexpr uout_t sign_mask = is_signed ? (1u << (bits - 1)) : 0; // only used for signed anyway, but w/e
 
-	static constexpr uout_t resp_mask = (1u << B) - 1;
-	static constexpr uout_t sign_mask = S ? (1u << (B - 1)) : 0; // only used for signed anyway, but w/e
+	spi_host_device_t spi_host;
+	gpio_num_t cs_gpio;
+	int clk_hz;
+	spi_device_handle_t spi_hdl;
 
 public:
-	static constexpr out_t max = S ? resp_mask / 2 : resp_mask;
-	static constexpr out_t min = S ? -1 - max : 0;
-
-	MCP3x0x(spi_host_device_t spihost, gpio_num_t csgpio, int clkhz = 1'000'000, float rv = 5.0f) : ref_volt(rv)
+	MCP3xxx(spi_host_device_t sh, gpio_num_t csg, int chz = 1'000'000) : spi_host(sh), cs_gpio(csg), clk_hz(chz)
 	{
-		esp_err_t ret = ESP_OK;
+		ESP_LOGI(TAG, "Constructed with host: %d, pin: %d", spi_host, cs_gpio);
+	}
+	~MCP3xxx() = default;
+
+	esp_err_t init()
+	{
+		assert(!spi_hdl);
 
 		const spi_device_interface_config_t dev_cfg = {
 			.command_bits = 2,
-			.address_bits = (C == MCP_CHANNELS_2) ? 1 : 3,
+			.address_bits = (C == MCP_ADC_CHANNELS_2) ? 1 : 3,
 			.dummy_bits = 2,
 			.mode = 0,
-			.clock_speed_hz = clkhz,
+			.duty_cycle_pos = 0,
+			.cs_ena_pretrans = 0,
+			.cs_ena_posttrans = 0,
+			.clock_speed_hz = clk_hz,
 			.input_delay_ns = 0,
-			.spics_io_num = csgpio,
-			.flags = SPI_DEVICE_HALFDUPLEX,
+			.spics_io_num = cs_gpio,
+			.flags = SPI_DEVICE_HALFDUPLEX, // SPI_DEVICE_NO_DUMMY - dummy is required and used as the conversion time delay
 			.queue_size = 1,
 			.pre_cb = NULL,
 			.post_cb = NULL,
-
 		};
 
-		ESP_GOTO_ON_ERROR(
-			spi_bus_add_device(spihost, &dev_cfg, &spi_hdl),
-			err, TAG, "Failed to add device to SPI bus!");
+		ESP_RETURN_ON_ERROR(
+			spi_bus_add_device(spi_host, &dev_cfg, &spi_hdl),
+			TAG, "Error in spi_bus_add_device!");
 
-		// int khz;
-		// spi_device_get_actual_freq(spi_hdl, &khz);
-
-		// ESP_LOGW(TAG, "kHz: %i", khz);
-		return;
-
-	err:
-		ESP_LOGE(TAG, "Failed to construct MCP! Error: %s", esp_err_to_name(ret));
+		return ESP_OK;
 	}
-	~MCP3x0x()
+
+	esp_err_t deinit()
 	{
-		esp_err_t ret = ESP_OK;
+		assert(spi_hdl);
 
-		ESP_GOTO_ON_ERROR(
+		ESP_RETURN_ON_ERROR(
 			spi_bus_remove_device(spi_hdl),
-			err, TAG, "Failed to remove device from SPI bus!");
-		return;
+			TAG, "Error in spi_bus_remove_device!");
+		spi_hdl = nullptr;
 
-	err:
-		ESP_LOGE(TAG, "Failed to destruct MCP! Error: %s", esp_err_to_name(ret));
+		return ESP_OK;
 	}
 
 	//
 
-	esp_err_t acquire_spi(TickType_t timeout = portMAX_DELAY)
+	esp_err_t acquire_spi(TickType_t timeout = portMAX_DELAY) const
 	{
+		assert(spi_hdl);
+
 		ESP_RETURN_ON_ERROR(
 			spi_device_acquire_bus(spi_hdl, timeout),
-			TAG, "Failed to acquire SPI bus!");
-
-		// spi_acq = true;
+			TAG, "Error in spi_device_acquire_bus!");
 
 		return ESP_OK;
 	}
 
-	esp_err_t release_spi()
+	esp_err_t release_spi() const
 	{
+		assert(spi_hdl);
+
 		spi_device_release_bus(spi_hdl); // return void
-		// spi_acq = false;
 		return ESP_OK;
 	}
-	/*/
-		out_t get_signed_raw(uint8_t chnl, mcp_read_mode_t rdmd = MCP_READ_SINGLE, size_t scnt = 1)
-		{
 
-			spi_transaction_t spi_trx = make_transaction(chnl, rdmd);
+	//
 
-			int32_t sum = 0;
-			int32_t raw;
-
-			for (size_t i = 0; i < scnt; ++i)
-			{
-				raw = get_response(&spi_trx);
-				if (raw == -1)
-					goto errgs;
-				sum += raw;
-			}
-
-			return (sum + ((sum < 0) ? -scnt : scnt) / 2) / scnt;
-
-		errgs:
-			return 0;
-		}
-	//*/
-
-	float get_float_volt(uint8_t chnl, mcp_read_mode_t rdmd = MCP_READ_SINGLE, size_t scnt = 1)
+	inline esp_err_t send_trx(spi_transaction_t &trx) const
 	{
-		spi_transaction_t trx1 = make_transaction(chnl, rdmd);
-		spi_transaction_t trx2 = trx1;
+		assert(spi_hdl);
 
-		int32_t sum = 0;
-
-		size_t i = 0;
-
-		send_trx(trx1);
-		++i;
-
-		while (i < scnt)
-		{
-			recv_trx();
-			send_trx(trx2);
-			++i;
-			sum += parse_trx(trx1);
-			recv_trx();
-			if (i < scnt)
-			{
-				send_trx(trx1);
-				++i;
-			}
-			sum += parse_trx(trx2);
-		}
-
-		return sum * ref_volt / scnt / max;
-
-		// errgs:
-		// 	return 0;
-	}
-
-private:
-	inline esp_err_t send_trx(spi_transaction_t &trx)
-	{
-		esp_err_t ret = ESP_OK;
-
-		ESP_GOTO_ON_ERROR(
+		ESP_RETURN_ON_ERROR(
 			spi_device_polling_start(spi_hdl, &trx, portMAX_DELAY),
-			err, TAG, "Error in spi_device_polling_start()");
+			TAG, "Error in spi_device_polling_start!");
 
-		return ret;
-	err:
-		ESP_LOGE(TAG, "Error in send_trx(): %s", esp_err_to_name(ret));
+		return ESP_OK;
+	}
+
+	inline esp_err_t recv_trx(TickType_t timeout = portMAX_DELAY) const
+	{
+		assert(spi_hdl);
+
+		esp_err_t ret = spi_device_polling_end(spi_hdl, timeout);
+
+		if (ret == ESP_OK || ret == ESP_ERR_TIMEOUT) [[likely]]
+			return ret;
+
+		ESP_LOGE(TAG, "Error in spi_device_polling_end!");
 		return ret;
 	}
 
-	inline esp_err_t recv_trx()
+	inline out_t parse_trx(const spi_transaction_t &trx) const
 	{
-		esp_err_t ret = ESP_OK;
+		uout_t out = SPI_SWAP_DATA_RX(*reinterpret_cast<const uint32_t *>(trx.rx_data), B);
 
-		ESP_GOTO_ON_ERROR(
-			spi_device_polling_end(spi_hdl, portMAX_DELAY),
-			err, TAG, "Error in spi_device_polling_end()");
-
-		return ret;
-	err:
-		ESP_LOGE(TAG, "Error in recv_trx(): %s", esp_err_to_name(ret));
-		return ret;
-	}
-
-	inline out_t parse_trx(spi_transaction_t &trx)
-	{
-		out_t out;
-
-		if constexpr (B <= 8)
-			out = trx.rx_data[0] >> (8 - B);
-		else
-			out = __builtin_bswap16(*reinterpret_cast<uint16_t *>(trx.rx_data)) >> (16 - B);
+		// ESP_LOGW(TAG, "0x%.8lx", *reinterpret_cast<const uint32_t *>(trx.rx_data));
+		// ESP_LOGW(TAG, "0x%.4x", out);
 
 		if constexpr (S)		   // if signed
 			if (out & sign_mask)   // if negative
@@ -218,29 +172,21 @@ private:
 		return out;
 	}
 
-	spi_transaction_t make_transaction(uint8_t chnl, mcp_read_mode_t rdmd)
+	static spi_transaction_t make_trx(uint8_t chnl, mcp_adc_read_mode_t rdmd = MCP_ADC_READ_SINGLE)
 	{
-		// Request/Response format (tx/rx), eight bits aligned.
+		// Request/Response format (tx/rx).
 		//
-		//  0  0  0  0  0  1  SG D2     D1 D0 X  X  X  X  X  X      X  X  X  X  X  X  X  X
-		// |--|--|--|--|--|--|--|--|   |--|--|--|--|--|--|--|--|   |--|--|--|--|--|--|--|--|
-		//  X  X  X  X  X  X  X  X      X  X  X  0  BY BX B9 B8     B7 B6 B5 B4 B3 B2 B1 B0
+		//   1 SG D2 D1 D0  0  0
+		// |--|--|--|--|--|--|--|
 		//
-		// Where Request:
-		//   * 0: dummy bits, must be zero.
-		//   * 1: start bit.
-		//   * SG/~DIFF:
-		//     - 0: differential conversion.
-		//     - 1: single conversion.
-		//   * D [2 1 0]: three bits for selecting 8 channels, for 4 the D2 is X
-		//   * X: dummy bits, whatever value.
+		// |--|--|--|--|--|--|--|--|--|--|--|--|
+		//  12 11 10  9  8  7  6  5  4  3  2  1
 		//
-		// Where Response:
-		//   * X: dummy bits; whatever value.
-		//   * 0: start bit.
-		//   * B [0 1 2 3 4 5 6 7 8 9 X Y Z]: big-endian.
-		//     - BY: most significant bit.
-		//     - B0: least significant bit.
+		// 3002      https://ww1.microchip.com/downloads/aemDocuments/documents/APID/ProductDocuments/DataSheets/21294E.pdf
+		// 3004/3008 https://ww1.microchip.com/downloads/aemDocuments/documents/MSLD/ProductDocuments/DataSheets/MCP3004-MCP3008-Data-Sheet-DS20001295.pdf
+		// 3202      https://ww1.microchip.com/downloads/aemDocuments/documents/APID/ProductDocuments/DataSheets/21034F.pdf
+		// 3204/3208 https://ww1.microchip.com/downloads/en/devicedoc/21298e.pdf
+		// 3302/3304 https://ww1.microchip.com/downloads/aemDocuments/documents/APID/ProductDocuments/DataSheets/21697F.pdf
 
 		spi_transaction_t trx;
 
@@ -250,58 +196,28 @@ private:
 
 		trx.tx_buffer = nullptr;
 		trx.length = 0;
-		trx.rxlength = B;
+		trx.rxlength = bits;
 
 		return trx;
 	}
 };
 
-#undef TAG
+// http://ww1.microchip.com/downloads/en/DeviceDoc/21294E.pdf
+using MCP3002 = MCP3xxx<MCP_ADC_CHANNELS_2, MCP_ADC_BITS_10>;
 
-/// \brief A typedef for the MCP3002.
-/// Max clock frequency for 2.7V: 1200000 Hz
-/// Max clock frequency for 5.0V: 3200000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21294E.pdf
-using MCP3002 = MCP3x0x<MCP_CHANNELS_2, MCP_BITS_10>;
+// http://ww1.microchip.com/downloads/en/DeviceDoc/21295C.pdf
+using MCP3004 = MCP3xxx<MCP_ADC_CHANNELS_4, MCP_ADC_BITS_10>;
+using MCP3008 = MCP3xxx<MCP_ADC_CHANNELS_8, MCP_ADC_BITS_10>;
 
-/// \brief A typedef for the MCP3004.
-/// Max clock frequency for 2.7V: 1350000 Hz
-/// Max clock frequency for 5.0V: 3600000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21295C.pdf
-using MCP3004 = MCP3x0x<MCP_CHANNELS_4, MCP_BITS_10>;
+// http://ww1.microchip.com/downloads/en/DeviceDoc/21034D.pdf
+using MCP3202 = MCP3xxx<MCP_ADC_CHANNELS_2, MCP_ADC_BITS_12>;
 
-/// \brief A typedef for the MCP3008.
-/// Max clock frequency for 2.7V: 1350000 Hz
-/// Max clock frequency for 5.0V: 3600000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21295C.pdf
-using MCP3008 = MCP3x0x<MCP_CHANNELS_8, MCP_BITS_10>;
+// http://ww1.microchip.com/downloads/en/DeviceDoc/21298c.pdf
+using MCP3204 = MCP3xxx<MCP_ADC_CHANNELS_4, MCP_ADC_BITS_12>;
+using MCP3208 = MCP3xxx<MCP_ADC_CHANNELS_8, MCP_ADC_BITS_12>;
 
-/// \brief A typedef for the MCP3202.
-/// Max clock frequency for 2.7V:  900000 Hz
-/// Max clock frequency for 5.0V: 1800000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21034D.pdf
-using MCP3202 = MCP3x0x<MCP_CHANNELS_2, MCP_BITS_12>;
+// http://ww1.microchip.com/downloads/en/DeviceDoc/21697e.pdf
+using MCP3302 = MCP3xxx<MCP_ADC_CHANNELS_4, MCP_ADC_BITS_13, MCP_ADC_DATA_SIGNED>;
+using MCP3304 = MCP3xxx<MCP_ADC_CHANNELS_8, MCP_ADC_BITS_13, MCP_ADC_DATA_SIGNED>;
 
-/// \brief A typedef for the MCP3204.
-/// Max clock frequency for 2.7V: 1000000 Hz
-/// Max clock frequency for 5.0V: 2000000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21298c.pdf
-using MCP3204 = MCP3x0x<MCP_CHANNELS_4, MCP_BITS_12>;
-
-/// \brief A typedef for the MCP3208.
-/// Max clock frequency for 2.7V: 1000000 Hz
-/// Max clock frequency for 5.0V: 2000000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21298c.pdf
-using MCP3208 = MCP3x0x<MCP_CHANNELS_8, MCP_BITS_12>;
-
-/// \brief A typedef for the MCP3302.
-/// Max clock frequency for 2.7V: 1050000 Hz
-/// Max clock frequency for 5.0V: 2100000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21697e.pdf
-using MCP3302 = MCP3x0x<MCP_CHANNELS_4, MCP_BITS_13, MCP_DATA_SIGNED>;
-
-/// \brief A typedef for the MCP3304.
-/// Max clock frequency for 2.7V: 1050000 Hz
-/// Max clock frequency for 5.0V: 2100000 Hz
-/// \sa http://ww1.microchip.com/downloads/en/DeviceDoc/21697e.pdf
-using MCP3304 = MCP3x0x<MCP_CHANNELS_8, MCP_BITS_13, MCP_DATA_SIGNED>;
+#endif
